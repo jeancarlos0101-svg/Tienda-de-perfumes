@@ -711,11 +711,11 @@ export default function Tienda() {
             NUEVOS INGRESOS
           </span>
           <h2 className="fw-bold mb-2 text-dark" style={{ fontSize: "2rem" }}>
-            Lo nuevo en Eclipse
+            Lo nuevo en nuestra tienda
           </h2>
           <p className="text-muted small mx-auto" style={{ maxWidth: "500px" }}>
             Conocé nuestros nuevos ingresos: perfumes originales y sellados,
-            recién llegados a Eclipse.
+            recién llegados a Su Mejor Esencia CR.
           </p>
 
           <div className="mx-auto mt-4" style={{ maxWidth: "350px" }}>
