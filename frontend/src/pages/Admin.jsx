@@ -1,182 +1,281 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 export default function Admin() {
-  const [productos, setProductos] = useState([
-    { id: 1, nombre: "Hawas Lava Gold", marca: "Rasasi · 100ml", precio: 32000, stock: 8, descripcion: "Especiado y amaderado", imagen: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=600&q=80" },
-    { id: 2, nombre: "Vanilla Vibe", marca: "Rayhaan · 100ml", precio: 25500, stock: 12, descripcion: "Vainilla dulce y envolvente", imagen: "https://images.unsplash.com/photo-1523293182086-7651a899d37f?auto=format&fit=crop&w=600&q=80" },
-    { id: 3, nombre: "Sigilo Noir", marca: "Luxe Edition · 100ml", precio: 34500, stock: 5, descripcion: "Tabaco y vainilla", imagen: "https://images.unsplash.com/photo-1547887537-6158d64c35b3?auto=format&fit=crop&w=600&q=80" }
-  ]);
-  
   const [autenticado, setAutenticado] = useState(false);
   const [usuario, setUsuario] = useState('');
-  const [password, setPassword] = useState('');
+  const [clave, setClave] = useState('');
 
+  const [tabActual, setTabActual] = useState('productos');
+  const [productos, setProductos] = useState([]);
+  const [pedidos, setPedidos] = useState([]);
+  const [cargando, setCargando] = useState(false);
+
+  // Estado del formulario de nuevo/editar producto
   const [editandoId, setEditandoId] = useState(null);
-  const [nombre, setNombre] = useState('');
-  const [marca, setMarca] = useState('');
-  const [precio, setPrecio] = useState('');
-  const [stock, setStock] = useState('');
-  const [descripcion, setDescripcion] = useState('');
-  const [imagen, setImagen] = useState('');
+  const [formProducto, setFormProducto] = useState({
+    nombre: '', marca: '', precio: '', decant_precio: '', imagen: '', stock: 10
+  });
 
+  // Login de administrador
   const handleLogin = (e) => {
     e.preventDefault();
-    if (usuario === 'admin' && password === '12345') {
+    if (usuario === 'admin' && clave === '12345') {
       setAutenticado(true);
+      cargarDatos();
     } else {
-      alert('Credenciales incorrectas (Usuario: admin, Contraseña: 12345)');
+      alert("Credenciales incorrectas.");
     }
   };
 
-  const guardarProducto = (e) => {
+  // Cargar datos desde Supabase
+  const cargarDatos = async () => {
+    setCargando(true);
+    try {
+      const resProds = await supabase.from('productos').select('*').order('id', { ascending: true });
+      if (resProds.data) setProductos(resProds.data);
+
+      const resPeds = await supabase.from('pedidos').select('*').order('created_at', { ascending: false });
+      if (resPeds.data) setPedidos(resPeds.data);
+    } catch (err) {
+      console.error("Error al cargar datos:", err.message);
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  // Guardar/Actualizar Producto
+  const guardarProducto = async (e) => {
     e.preventDefault();
-    if (editandoId) {
-      setProductos(productos.map(p => p.id === editandoId ? { ...p, nombre, marca, precio: Number(precio), stock: Number(stock), descripcion, imagen } : p));
-      alert('Inventario actualizado con éxito');
-    } else {
-      const nuevo = { id: Date.now(), nombre, marca, precio: Number(precio), stock: Number(stock), descripcion, imagen };
-      setProductos([...productos, nuevo]);
-      alert('Producto agregado con éxito');
+    try {
+      const payload = {
+        nombre: formProducto.nombre,
+        marca: formProducto.marca,
+        precio: Number(formProducto.precio),
+        decant_precio: formProducto.decant_precio ? Number(formProducto.decant_precio) : null,
+        imagen: formProducto.imagen,
+        stock: Number(formProducto.stock)
+      };
+
+      if (editandoId) {
+        await supabase.from('productos').update(payload).eq('id', editandoId);
+        alert("Producto actualizado exitosamente.");
+      } else {
+        await supabase.from('productos').insert([payload]);
+        alert("Nuevo producto agregado.");
+      }
+
+      setFormProducto({ nombre: '', marca: '', precio: '', decant_precio: '', imagen: '', stock: 10 });
+      setEditandoId(null);
+      cargarDatos();
+    } catch (err) {
+      alert("Error al guardar: " + err.message);
     }
-    limpiarFormulario();
   };
 
-  const prepararEdicion = (prod) => {
+  const seleccionarParaEditar = (prod) => {
     setEditandoId(prod.id);
-    setNombre(prod.nombre);
-    setMarca(prod.marca || '');
-    setPrecio(prod.precio);
-    setStock(prod.stock);
-    setDescripcion(prod.descripcion);
-    setImagen(prod.imagen);
+    setFormProducto({
+      nombre: prod.nombre,
+      marca: prod.marca,
+      precio: prod.precio,
+      decant_precio: prod.decant_precio || '',
+      imagen: prod.imagen,
+      stock: prod.stock || 10
+    });
   };
 
-  const eliminarProducto = (id) => {
-    if (window.confirm('¿Estás seguro de eliminar este producto?')) {
-      setProductos(productos.filter(p => p.id !== id));
+  const eliminarProducto = async (id) => {
+    if (window.confirm("¿Seguro que deseas eliminar este producto?")) {
+      await supabase.from('productos').delete().eq('id', id);
+      cargarDatos();
     }
   };
 
-  const limpiarFormulario = () => {
-    setEditandoId(null);
-    setNombre('');
-    setMarca('');
-    setPrecio('');
-    setStock('');
-    setDescripcion('');
-    setImagen('');
+  const cambiarEstadoPedido = async (id, nuevoEstado) => {
+    await supabase.from('pedidos').update({ estado: nuevoEstado }).eq('id', id);
+    cargarDatos();
   };
 
+  // -------------------------------------------------------------
+  // PANTALLA DE LOGIN
+  // -------------------------------------------------------------
   if (!autenticado) {
     return (
-      <div className="container py-5 d-flex justify-content-center align-items-center min-vh-100">
-        <div style={{ maxWidth: '400px', width: '100%' }}>
-          <div className="text-center mb-4">
-            <h3 className="fw-bold">Panel Administrativo</h3>
-            <p className="text-muted small">Ingresa tus credenciales de acceso</p>
-          </div>
-          <form onSubmit={handleLogin} className="card p-4 shadow-sm border-0 rounded-4">
-            <input type="text" className="form-control mb-3" placeholder="Usuario (admin)" value={usuario} onChange={(e) => setUsuario(e.target.value)} required />
-            <input type="password" className="form-control mb-3" placeholder="Contraseña (12345)" value={password} onChange={(e) => setPassword(e.target.value)} required />
-            <button className="btn btn-dark w-100 fw-bold py-2">Ingresar</button>
-            <div className="text-center mt-3">
-              <Link to="/" className="text-decoration-none small text-secondary">← Volver a la Tienda</Link>
+      <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light">
+        <div className="card shadow-sm p-4 border-0" style={{ width: '350px' }}>
+          <h5 className="fw-bold text-center mb-1">SU MEJOR ESENCIA CR</h5>
+          <p className="text-muted small text-center mb-4">Panel de Administración</p>
+          <form onSubmit={handleLogin}>
+            <div className="mb-3">
+              <label className="form-label small fw-bold">Usuario</label>
+              <input type="text" className="form-control py-2" required value={usuario} onChange={(e) => setUsuario(e.target.value)} />
             </div>
+            <div className="mb-3">
+              <label className="form-label small fw-bold">Contraseña</label>
+              <input type="password" className="form-control py-2" required value={clave} onChange={(e) => setClave(e.target.value)} />
+            </div>
+            <button type="submit" className="btn btn-dark w-100 py-2 fw-bold">Ingresar →</button>
           </form>
         </div>
       </div>
     );
   }
 
+  // -------------------------------------------------------------
+  // PANEL ADMINISTRATIVO PRINCIPAL
+  // -------------------------------------------------------------
   return (
-    <div className="container py-5" style={{ color: '#1E2A24' }}>
-      <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-        <div className="d-flex align-items-center gap-3">
-          <h2 className="fw-bold m-0">Gestión de Inventario</h2>
-          <Link to="/" className="btn btn-outline-dark btn-sm">🏠 Ver Tienda</Link>
+    <div className="min-vh-100 bg-light">
+      <nav className="navbar navbar-expand navbar-dark bg-dark px-4">
+        <span className="navbar-brand fw-bold">SU MEJOR ESENCIA CR · Admin Panel</span>
+        <div className="ms-auto">
+          <button className="btn btn-outline-light btn-sm" onClick={() => setAutenticado(false)}>Cerrar Sesión</button>
         </div>
-        <button className="btn btn-outline-danger btn-sm" onClick={() => setAutenticado(false)}>Cerrar Sesión</button>
-      </div>
+      </nav>
 
-      <div className="row g-4">
-        <div className="col-lg-4">
-          <div className="card p-4 shadow-sm border-0 rounded-4 bg-white">
-            <h5 className="fw-bold mb-3">{editandoId ? '✏️ Editar Producto' : '➕ Nuevo Producto'}</h5>
-            <form onSubmit={guardarProducto}>
-              <div className="mb-2">
-                <label className="form-label small fw-bold">Nombre del Perfume</label>
-                <input type="text" className="form-control" required value={nombre} onChange={(e) => setNombre(e.target.value)} />
-              </div>
-              <div className="mb-2">
-                <label className="form-label small fw-bold">Marca y Presentación (Ej. Rasasi · 100ml)</label>
-                <input type="text" className="form-control" required value={marca} onChange={(e) => setMarca(e.target.value)} />
-              </div>
-              <div className="row g-2 mb-2">
-                <div className="col-6">
-                  <label className="form-label small fw-bold">Precio (CRC)</label>
-                  <input type="number" className="form-control" required value={precio} onChange={(e) => setPrecio(e.target.value)} />
-                </div>
-                <div className="col-6">
-                  <label className="form-label small fw-bold">Stock Bodega</label>
-                  <input type="number" className="form-control" required value={stock} onChange={(e) => setStock(e.target.value)} />
-                </div>
-              </div>
-              <div className="mb-2">
-                <label className="form-label small fw-bold">URL de la Imagen</label>
-                <input type="text" className="form-control" value={imagen} onChange={(e) => setImagen(e.target.value)} />
-              </div>
-              <div className="mb-3">
-                <label className="form-label small fw-bold">Descripción / Notas</label>
-                <textarea className="form-control" rows="3" value={descripcion} onChange={(e) => setDescripcion(e.target.value)}></textarea>
-              </div>
-
-              <div className="d-flex gap-2">
-                <button type="submit" className="btn btn-dark w-100 fw-bold">{editandoId ? 'Actualizar' : 'Guardar'}</button>
-                {editandoId && <button type="button" className="btn btn-secondary" onClick={limpiarFormulario}>Cancelar</button>}
-              </div>
-            </form>
-          </div>
+      <div className="container py-4">
+        {/* PESTAÑAS DE NAVEGACIÓN */}
+        <div className="d-flex gap-2 mb-4 border-bottom pb-2">
+          <button 
+            className={`btn btn-sm ${tabActual === 'productos' ? 'btn-dark fw-bold' : 'btn-outline-secondary'}`}
+            onClick={() => setTabActual('productos')}
+          >
+            📦 Gestión de Inventario ({productos.length})
+          </button>
+          <button 
+            className={`btn btn-sm ${tabActual === 'pedidos' ? 'btn-dark fw-bold' : 'btn-outline-secondary'}`}
+            onClick={() => setTabActual('pedidos')}
+          >
+            🛒 Pedidos Recibidos ({pedidos.length})
+          </button>
         </div>
 
-        <div className="col-lg-8">
-          <div className="card p-4 shadow-sm border-0 rounded-4 bg-white">
-            <h5 className="fw-bold mb-3">Control de Stock ({productos.length} ítems)</h5>
-            <div className="table-responsive">
-              <table className="table table-hover align-middle">
-                <thead>
-                  <tr>
-                    <th>Imagen</th>
-                    <th>Nombre</th>
-                    <th>Marca</th>
-                    <th>Precio</th>
-                    <th>Stock</th>
-                    <th className="text-end">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {productos.map((prod) => (
-                    <tr key={prod.id}>
-                      <td>
-                        <img src={prod.imagen || 'https://via.placeholder.com/50'} alt={prod.nombre} className="rounded border" style={{ width: '45px', height: '45px', objectFit: 'cover' }} />
-                      </td>
-                      <td className="fw-semibold">{prod.nombre}</td>
-                      <td><small className="text-muted">{prod.marca}</small></td>
-                      <td>₡{prod.precio.toLocaleString()}</td>
-                      <td>
-                        <span className={`badge ${prod.stock <= 3 ? 'bg-danger' : 'bg-success'}`}>{prod.stock} disp.</span>
-                      </td>
-                      <td className="text-end">
-                        <button className="btn btn-sm btn-outline-primary me-2" onClick={() => prepararEdicion(prod)}>✏️</button>
-                        <button className="btn btn-sm btn-outline-danger" onClick={() => eliminarProducto(prod.id)}>🗑️</button>
-                      </td>
+        {cargando ? (
+          <div className="text-center py-5"><div className="spinner-border text-dark"></div></div>
+        ) : tabActual === 'productos' ? (
+          <div className="row g-4">
+            {/* FORMULARIO */}
+            <div className="col-lg-4">
+              <div className="card shadow-sm p-4 border-0">
+                <h6 className="fw-bold mb-3">{editandoId ? 'Editar Producto' : 'Agregar Nuevo Perfume'}</h6>
+                <form onSubmit={guardarProducto}>
+                  <div className="mb-2">
+                    <label className="form-label small">Nombre del Perfume</label>
+                    <input type="text" className="form-control py-1" required value={formProducto.nombre} onChange={(e) => setFormProducto({...formProducto, nombre: e.target.value})} />
+                  </div>
+                  <div className="mb-2">
+                    <label className="form-label small">Marca / Presentación</label>
+                    <input type="text" className="form-control py-1" placeholder="Ej: Rasasi · 100ml" required value={formProducto.marca} onChange={(e) => setFormProducto({...formProducto, marca: e.target.value})} />
+                  </div>
+                  <div className="row g-2 mb-2">
+                    <div className="col-6">
+                      <label className="form-label small">Precio Botella (₡)</label>
+                      <input type="number" className="form-control py-1" required value={formProducto.precio} onChange={(e) => setFormProducto({...formProducto, precio: e.target.value})} />
+                    </div>
+                    <div className="col-6">
+                      <label className="form-label small">Precio Decant (₡)</label>
+                      <input type="number" className="form-control py-1" placeholder="Opcional" value={formProducto.decant_precio} onChange={(e) => setFormProducto({...formProducto, decant_precio: e.target.value})} />
+                    </div>
+                  </div>
+                  <div className="mb-2">
+                    <label className="form-label small">URL de la Imagen</label>
+                    <input type="url" className="form-control py-1" required value={formProducto.imagen} onChange={(e) => setFormProducto({...formProducto, imagen: e.target.value})} />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label small">Stock Disponible</label>
+                    <input type="number" className="form-control py-1" required value={formProducto.stock} onChange={(e) => setFormProducto({...formProducto, stock: e.target.value})} />
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button type="submit" className="btn btn-dark btn-sm w-100 fw-bold">{editandoId ? 'Actualizar' : 'Guardar'}</button>
+                    {editandoId && (
+                      <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => { setEditandoId(null); setFormProducto({ nombre: '', marca: '', precio: '', decant_precio: '', imagen: '', stock: 10 }); }}>Cancelar</button>
+                    )}
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* TABLA DE PRODUCTOS */}
+            <div className="col-lg-8">
+              <div className="card shadow-sm border-0 p-3">
+                <table className="table table-hover align-middle mb-0">
+                  <thead className="table-light">
+                    <tr className="small">
+                      <th>Imagen</th>
+                      <th>Producto</th>
+                      <th>Precio Botella</th>
+                      <th>Decant</th>
+                      <th>Stock</th>
+                      <th>Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="small">
+                    {productos.map(p => (
+                      <tr key={p.id}>
+                        <td><img src={p.imagen} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover' }} className="rounded" /></td>
+                        <td>
+                          <div className="fw-bold">{p.nombre}</div>
+                          <small className="text-muted">{p.marca}</small>
+                        </td>
+                        <td>₡{p.precio.toLocaleString()}</td>
+                        <td>{p.decant_precio ? `₡${p.decant_precio.toLocaleString()}` : '-'}</td>
+                        <td><span className="badge bg-secondary">{p.stock} unids</span></td>
+                        <td>
+                          <button className="btn btn-sm btn-outline-dark me-1" onClick={() => seleccionarParaEditar(p)}>✏️</button>
+                          <button className="btn btn-sm btn-outline-danger" onClick={() => eliminarProducto(p.id)}>🗑️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          /* TABLA DE PEDIDOS */
+          <div className="card shadow-sm border-0 p-3">
+            <table className="table table-hover align-middle mb-0">
+              <thead className="table-light">
+                <tr className="small">
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Dirección</th>
+                  <th>Total</th>
+                  <th>Método</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody className="small">
+                {pedidos.map(ped => (
+                  <tr key={ped.id}>
+                    <td>{new Date(ped.created_at).toLocaleDateString('es-CR')}</td>
+                    <td>
+                      <div className="fw-bold">{ped.cliente_nombre}</div>
+                      <small className="text-muted">{ped.telefono}</small>
+                    </td>
+                    <td>{ped.direccion}, {ped.provincia}</td>
+                    <td className="fw-bold">₡{ped.total.toLocaleString()}</td>
+                    <td><span className="badge bg-light text-dark border">{ped.metodo_pago.toUpperCase()}</span></td>
+                    <td>
+                      <select 
+                        className="form-select form-select-sm" 
+                        value={ped.estado} 
+                        onChange={(e) => cambiarEstadoPedido(ped.id, e.target.value)}
+                      >
+                        <option value="Pendiente">Pendiente</option>
+                        <option value="Pago Confirmado">Pago Confirmado</option>
+                        <option value="Enviado por Correos">Enviado por Correos</option>
+                        <option value="Completado">Completado</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

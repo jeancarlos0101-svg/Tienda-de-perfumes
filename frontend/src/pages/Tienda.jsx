@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap-icons/font/bootstrap-icons.css';
 
 export default function Tienda() {
+  const [productos, setProductos] = useState([]);
+  const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [carrito, setCarrito] = useState([]);
   const [mostrarCarrito, setMostrarCarrito] = useState(false);
@@ -15,43 +18,30 @@ export default function Tienda() {
     numeroTarjeta: '', expiracion: '', cvv: '', nombreTitular: ''
   });
 
-  const productos = [
-    {
-      id: 1,
-      nombre: "Hawas Lava Gold",
-      marca: "Rasasi · 100ml",
-      precio: 32000,
-      imagen: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=800&q=80",
-      decantPrecio: 3000
-    },
-    {
-      id: 2,
-      nombre: "Vantage",
-      marca: "Rayhaan · 100ml",
-      precio: 29000,
-      imagen: "https://images.unsplash.com/photo-1523293182086-7651a899d37f?auto=format&fit=crop&w=800&q=80",
-      decantPrecio: 2500
-    },
-    {
-      id: 3,
-      nombre: "Vanilla 01",
-      marca: "Swiss Arabian · 100ml",
-      precio: 31000,
-      imagen: "https://images.unsplash.com/photo-1547887537-6158d64c35b3?auto=format&fit=crop&w=800&q=80",
-      decantPrecio: 3000
-    },
-    {
-      id: 4,
-      nombre: "Private Key To My Success",
-      marca: "Armaf · 100ml",
-      precio: 36000,
-      imagen: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=800&q=80",
-      decantPrecio: 3500
+  // -------------------------------------------------------------
+  // CARGAR PRODUCTOS DESDE SUPABASE
+  // -------------------------------------------------------------
+  useEffect(() => {
+    async function obtenerProductos() {
+      try {
+        const { data, error } = await supabase
+          .from('productos')
+          .select('*')
+          .order('id', { ascending: true });
+
+        if (error) throw error;
+        if (data) setProductos(data);
+      } catch (err) {
+        console.error("Error cargando productos de Supabase:", err.message);
+      } finally {
+        setCargando(false);
+      }
     }
-  ];
+    obtenerProductos();
+  }, []);
 
   // -------------------------------------------------------------
-  // MANEJO DEL BOTÓN ATRÁS EN CELULARES (POPSTATE / NAVEGACIÓN)
+  // BOTÓN ATRÁS EN CELULARES (POPSTATE)
   // -------------------------------------------------------------
   useEffect(() => {
     const manejarBotonAtras = () => {
@@ -107,7 +97,7 @@ export default function Tienda() {
       ...producto,
       id: esDecant ? `${producto.id}-decant` : producto.id,
       nombre: esDecant ? `Decant ${producto.nombre} (2ml)` : producto.nombre,
-      precio: esDecant ? producto.decantPrecio : producto.precio
+      precio: esDecant ? (producto.decant_precio || producto.decantPrecio) : producto.precio
     };
 
     setCarrito(prev => {
@@ -141,41 +131,63 @@ export default function Tienda() {
   const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   // -------------------------------------------------------------
-  // PROCESAMIENTO DE PAGOS
+  // PROCESAMIENTO DE PAGOS & REGISTRO EN BASE DE DATOS
   // -------------------------------------------------------------
-  const procesarPago = (e) => {
+  const procesarPago = async (e) => {
     e.preventDefault();
-    const numPedido = Math.floor(100000 + Math.random() * 900000);
 
-    if (metodoPago === 'sinpe') {
-      const telefonoTienda = "50688888888"; // Número oficial de la tienda
-      const resumenProductos = carrito.map(i => `• ${i.nombre} x${i.cantidad}`).join('\n');
-      
-      const mensajeWhatsApp = encodeURIComponent(
-        `¡Hola Su Mejor Esencia CR! 🌸\n\n` +
-        `Acabo de realizar la orden por SINPE Móvil.\n\n` +
-        `📌 *Orden #${numPedido}*\n` +
-        `👤 *Cliente:* ${formData.nombre} ${formData.apellidos}\n` +
-        `📞 *Teléfono:* ${formData.telefono}\n` +
-        `📍 *Dirección:* ${formData.direccion}, ${formData.canton}, ${formData.provincia}\n\n` +
-        `🛍️ *Productos:*\n${resumenProductos}\n\n` +
-        `💰 *Total Transferido:* ₡${totalGeneral.toLocaleString()}\n\n` +
-        `Adjunto el comprobante de pago a continuación.`
-      );
+    if (metodoPago === 'tarjeta' && (!formData.numeroTarjeta || !formData.expiracion || !formData.cvv)) {
+      alert("Por favor completa los datos requeridos de la tarjeta.");
+      return;
+    }
 
-      window.open(`https://wa.me/${telefonoTienda}?text=${mensajeWhatsApp}`, '_blank');
-      alert(`¡Orden #${numPedido} registrada! Por favor envía el comprobante por WhatsApp para proceder con el envío.`);
-      setCarrito([]);
-      volverDeCheckout();
+    try {
+      // 1. Guardar la orden en Supabase
+      const { error } = await supabase.from('pedidos').insert([
+        {
+          cliente_nombre: `${formData.nombre} ${formData.apellidos}`,
+          telefono: formData.telefono,
+          direccion: `${formData.direccion}, ${formData.canton}, ${formData.distrito}`,
+          provincia: formData.provincia,
+          total: totalGeneral,
+          metodo_pago: metodoPago,
+          estado: 'Pendiente',
+          items: carrito
+        }
+      ]);
 
-    } else {
-      if (!formData.numeroTarjeta || !formData.expiracion || !formData.cvv) {
-        alert("Por favor completa los datos requeridos de la tarjeta.");
-        return;
+      if (error) throw error;
+
+      const numPedido = Math.floor(100000 + Math.random() * 900000);
+
+      // 2. Redirección o aviso según método de pago
+      if (metodoPago === 'sinpe') {
+        const telefonoTienda = "50688888888"; // Número de SINPE de la tienda
+        const resumenProductos = carrito.map(i => `• ${i.nombre} x${i.cantidad}`).join('\n');
+        
+        const mensajeWhatsApp = encodeURIComponent(
+          `¡Hola Su Mejor Esencia CR! 🌸\n\n` +
+          `Acabo de realizar la orden por SINPE Móvil.\n\n` +
+          `📌 *Orden #${numPedido}*\n` +
+          `👤 *Cliente:* ${formData.nombre} ${formData.apellidos}\n` +
+          `📞 *Teléfono:* ${formData.telefono}\n` +
+          `📍 *Dirección:* ${formData.direccion}, ${formData.canton}, ${formData.provincia}\n\n` +
+          `🛍️ *Productos:*\n${resumenProductos}\n\n` +
+          `💰 *Total Transferido:* ₡${totalGeneral.toLocaleString()}\n\n` +
+          `Adjunto el comprobante de pago a continuación.`
+        );
+
+        window.open(`https://wa.me/${telefonoTienda}?text=${mensajeWhatsApp}`, '_blank');
+        alert(`¡Orden #${numPedido} registrada! Enviando comprobante por WhatsApp.`);
+      } else {
+        alert(`¡Pago con tarjeta procesado exitosamente para la Orden #${numPedido}! Gracias por comprar en Su Mejor Esencia.`);
       }
-      alert(`¡Pago con tarjeta procesado exitosamente para la Orden #${numPedido}! Gracias por comprar en Su Mejor Esencia.`);
+
       setCarrito([]);
       volverDeCheckout();
+
+    } catch (err) {
+      alert("Hubo un problema al registrar la orden en la base de datos: " + err.message);
     }
   };
 
@@ -398,50 +410,52 @@ export default function Tienda() {
       )}
 
       {/* HERO BANNER */}
-      <section className="w-100 py-5 px-4 px-lg-5" style={{ backgroundColor: '#F7F4EE' }}>
-        <div className="container-fluid px-0 py-4">
-          <div className="row align-items-center justify-content-center g-4">
-            
-            <div className="col-lg-5 text-start ps-lg-5">
-              <span className="text-uppercase fw-semibold d-block mb-2" style={{ color: '#B25D38', letterSpacing: '1.2px', fontSize: '0.7rem' }}>
-                NUEVO INGRESO
-              </span>
-              <h1 className="fw-bold text-dark mb-1" style={{ fontSize: '2.8rem', letterSpacing: '-0.5px' }}>
-                Hawas Lava Gold
-              </h1>
-              <p className="text-muted mb-3" style={{ fontSize: '0.95rem' }}>
-                Rasasi · 100ml
-              </p>
-              <h3 className="fw-bold text-dark mb-4" style={{ fontSize: '1.8rem' }}>
-                ₡32.000
-              </h3>
+      {productos.length > 0 && (
+        <section className="w-100 py-5 px-4 px-lg-5" style={{ backgroundColor: '#F7F4EE' }}>
+          <div className="container-fluid px-0 py-4">
+            <div className="row align-items-center justify-content-center g-4">
+              
+              <div className="col-lg-5 text-start ps-lg-5">
+                <span className="text-uppercase fw-semibold d-block mb-2" style={{ color: '#B25D38', letterSpacing: '1.2px', fontSize: '0.7rem' }}>
+                  DESTACADO DEL MES
+                </span>
+                <h1 className="fw-bold text-dark mb-1" style={{ fontSize: '2.8rem', letterSpacing: '-0.5px' }}>
+                  {productos[0].nombre}
+                </h1>
+                <p className="text-muted mb-3" style={{ fontSize: '0.95rem' }}>
+                  {productos[0].marca}
+                </p>
+                <h3 className="fw-bold text-dark mb-4" style={{ fontSize: '1.8rem' }}>
+                  ₡{productos[0].precio.toLocaleString()}
+                </h3>
 
-              <div className="d-flex align-items-center gap-4">
-                <button 
-                  className="btn bg-white text-dark rounded-pill px-4 py-2 fw-semibold border shadow-sm"
-                  style={{ fontSize: '0.85rem' }}
-                  onClick={() => agregarAlCarrito(productos[0])}
-                >
-                  Comprar
-                </button>
-                <a href="#catalogo" className="text-primary text-decoration-none fw-semibold" style={{ fontSize: '0.85rem' }}>
-                  Ver catálogo completo &gt;
-                </a>
+                <div className="d-flex align-items-center gap-4">
+                  <button 
+                    className="btn bg-white text-dark rounded-pill px-4 py-2 fw-semibold border shadow-sm"
+                    style={{ fontSize: '0.85rem' }}
+                    onClick={() => agregarAlCarrito(productos[0])}
+                  >
+                    Comprar ahora
+                  </button>
+                  <a href="#catalogo" className="text-primary text-decoration-none fw-semibold" style={{ fontSize: '0.85rem' }}>
+                    Ver catálogo completo &gt;
+                  </a>
+                </div>
               </div>
-            </div>
 
-            <div className="col-lg-6 text-center d-flex align-items-center justify-content-center position-relative">
-              <img 
-                src="https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=800&q=80" 
-                alt="Hawas Lava Gold" 
-                className="img-fluid"
-                style={{ maxHeight: '380px', objectFit: 'contain', filter: 'drop-shadow(0 15px 25px rgba(0,0,0,0.08))' }}
-              />
-            </div>
+              <div className="col-lg-6 text-center d-flex align-items-center justify-content-center position-relative">
+                <img 
+                  src={productos[0].imagen} 
+                  alt={productos[0].nombre} 
+                  className="img-fluid"
+                  style={{ maxHeight: '380px', objectFit: 'contain', filter: 'drop-shadow(0 15px 25px rgba(0,0,0,0.08))' }}
+                />
+              </div>
 
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* CATÁLOGO DE PRODUCTOS */}
       <section id="catalogo" className="w-100 py-5 px-4 px-lg-5">
@@ -462,29 +476,45 @@ export default function Tienda() {
           </div>
         </div>
 
-        <div className="row g-4 w-100 m-0 justify-content-center">
-          {productosFiltrados.map(prod => (
-            <div className="col-6 col-md-4 col-lg-3" key={prod.id}>
-              <div className="h-100 bg-white p-3 rounded-3 border-0 text-center d-flex flex-column justify-content-between shadow-sm">
-                <div>
-                  <img src={prod.imagen} alt={prod.nombre} className="img-fluid rounded mb-3" style={{ height: '160px', objectFit: 'contain', width: '100%' }} />
-                  <small className="text-muted d-block text-uppercase" style={{ fontSize: '0.65rem' }}>{prod.marca}</small>
-                  <h6 className="fw-bold text-dark mt-1 mb-2" style={{ fontSize: '0.85rem' }}>{prod.nombre}</h6>
-                </div>
-                <div>
-                  <p className="fw-bold text-dark mb-2" style={{ fontSize: '0.9rem' }}>₡{prod.precio.toLocaleString()}</p>
-                  <button 
-                    className="btn btn-dark btn-sm w-100 rounded-pill fw-semibold py-1"
-                    style={{ fontSize: '0.75rem' }}
-                    onClick={() => agregarAlCarrito(prod)}
-                  >
-                    Añadir al Carrito
-                  </button>
+        {cargando ? (
+          <div className="text-center py-5">
+            <div className="spinner-border text-dark" role="status"></div>
+            <p className="text-muted small mt-2">Cargando fragancias...</p>
+          </div>
+        ) : (
+          <div className="row g-4 w-100 m-0 justify-content-center">
+            {productosFiltrados.map(prod => (
+              <div className="col-6 col-md-4 col-lg-3" key={prod.id}>
+                <div className="h-100 bg-white p-3 rounded-3 border-0 text-center d-flex flex-column justify-content-between shadow-sm">
+                  <div>
+                    <img src={prod.imagen} alt={prod.nombre} className="img-fluid rounded mb-3" style={{ height: '160px', objectFit: 'contain', width: '100%' }} />
+                    <small className="text-muted d-block text-uppercase" style={{ fontSize: '0.65rem' }}>{prod.marca}</small>
+                    <h6 className="fw-bold text-dark mt-1 mb-2" style={{ fontSize: '0.85rem' }}>{prod.nombre}</h6>
+                  </div>
+                  <div>
+                    <p className="fw-bold text-dark mb-2" style={{ fontSize: '0.9rem' }}>₡{prod.precio.toLocaleString()}</p>
+                    <button 
+                      className="btn btn-dark btn-sm w-100 rounded-pill fw-semibold py-1 mb-2"
+                      style={{ fontSize: '0.75rem' }}
+                      onClick={() => agregarAlCarrito(prod)}
+                    >
+                      Añadir Botella (100ml)
+                    </button>
+                    {prod.decant_precio && (
+                      <button 
+                        className="btn btn-outline-secondary btn-sm w-100 rounded-pill fw-semibold py-1"
+                        style={{ fontSize: '0.7rem' }}
+                        onClick={() => agregarAlCarrito(prod, true)}
+                      >
+                        + Decant 2ml (₡{prod.decant_precio.toLocaleString()})
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* FOOTER */}
