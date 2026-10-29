@@ -9,6 +9,11 @@ export default function Tienda() {
   const [busqueda, setBusqueda] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todos');
   
+  // Filtros laterales avanzados (sin la categoría en la barra)
+  const [marcaSeleccionada, setMarcaSeleccionada] = useState('Todas');
+  const [ocasionSeleccionada, setOcasionSeleccionada] = useState('Todas');
+  const [precioMaximo, setPrecioMaximo] = useState(100000);
+
   const [carrito, setCarrito] = useState([]);
   const [mostrarCarrito, setMostrarCarrito] = useState(false);
   const [pantallaCheckout, setPantallaCheckout] = useState(false);
@@ -16,7 +21,7 @@ export default function Tienda() {
 
   // Estado para Cupones
   const [codigoCupon, setCodigoCupon] = useState('');
-  const [descuentoAplicado, setDescuentoAplicado] = useState(0); // Porcentaje
+  const [descuentoAplicado, setDescuentoAplicado] = useState(0);
   const [mensajeCupon, setMensajeCupon] = useState({ texto: '', tipo: '' });
 
   const [formData, setFormData] = useState({
@@ -87,13 +92,22 @@ export default function Tienda() {
   };
 
   // -------------------------------------------------------------
-  // FILTRADO AVANZADO DE PRODUCTOS
+  // EXTRACCIÓN DE MARCAS DISPONIBLES
+  // -------------------------------------------------------------
+  const marcasDisponibles = ['Todas', ...new Set(productos.map(p => p.marca))];
+
+  // -------------------------------------------------------------
+  // FILTRADO AVANZADO (CATEGORÍA + MARCA + OCASIÓN + PRECIO + BÚSQUEDA)
   // -------------------------------------------------------------
   const productosFiltrados = productos.filter(p => {
     const coincideBusqueda = p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
                              p.marca.toLowerCase().includes(busqueda.toLowerCase());
     const coincideCategoria = categoriaFiltro === 'Todos' || p.categoria === categoriaFiltro;
-    return coincideBusqueda && coincideCategoria;
+    const coincideMarca = marcaSeleccionada === 'Todas' || p.marca === marcaSeleccionada;
+    const coincidePrecio = p.precio <= precioMaximo;
+    const coincideOcasion = ocasionSeleccionada === 'Todas' || (p.ocasion && p.ocasion.includes(ocasionSeleccionada));
+
+    return coincideBusqueda && coincideCategoria && coincideMarca && coincidePrecio && coincideOcasion;
   });
 
   // -------------------------------------------------------------
@@ -223,7 +237,6 @@ export default function Tienda() {
       setCodigoCupon('');
       volverDeCheckout();
 
-      // Recargar catálogo para refrescar inventario descontado
       const { data } = await supabase.from('productos').select('*').order('id', { ascending: true });
       if (data) setProductos(data);
 
@@ -324,8 +337,6 @@ export default function Tienda() {
 
           <div className="col-lg-5 p-4 p-md-5 border-start" style={{ backgroundColor: '#F7F4EE' }}>
             <div style={{ maxWidth: '400px' }} className="mx-auto">
-              
-              {/* LISTA DE ITEMS EN CHECKOUT */}
               <div className="mb-4">
                 {carrito.map(item => (
                   <div key={item.id} className="d-flex align-items-center justify-content-between mb-3">
@@ -341,7 +352,6 @@ export default function Tienda() {
                 ))}
               </div>
 
-              {/* SECCIÓN DE CUPÓN DE DESCUENTO */}
               <div className="mb-4 pt-3 border-top">
                 <label className="form-label small fw-bold text-uppercase">Cupón de Descuento</label>
                 <div className="input-group">
@@ -361,7 +371,6 @@ export default function Tienda() {
                 )}
               </div>
 
-              {/* DESGLOSE DE TOTALES */}
               <div className="py-3 border-top border-bottom mb-3">
                 <div className="d-flex justify-content-between mb-2 small text-secondary">
                   <span>Subtotal</span>
@@ -424,6 +433,41 @@ export default function Tienda() {
         </div>
       </nav>
 
+      {/* SECCIÓN DE CATEGORÍAS VISUALES EN CÍRCULOS */}
+      <section className="w-100 py-5 bg-white border-bottom">
+        <div className="container text-center">
+          <span className="text-uppercase fw-semibold d-block mb-1" style={{ color: '#B25D38', letterSpacing: '1.5px', fontSize: '0.7rem' }}>
+            CATEGORÍAS
+          </span>
+          <h2 className="fw-bold mb-4 text-dark" style={{ fontSize: '1.8rem' }}>Encontrá tu fragancia</h2>
+
+          <div className="row justify-content-center g-4">
+            {[
+              { nombre: 'Hombre', img: 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?auto=format&fit=crop&w=400&q=80', categoriaVal: 'Hombre' },
+              { nombre: 'Mujer', img: 'https://images.unsplash.com/photo-1588405748880-12d1d2a59f75?auto=format&fit=crop&w=400&q=80', categoriaVal: 'Mujer' },
+              { nombre: 'Árabes', img: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=400&q=80', categoriaVal: 'Árabes' },
+              { nombre: 'Corporales', img: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=400&q=80', categoriaVal: 'Corporales' },
+              { nombre: 'Decants', img: 'https://images.unsplash.com/photo-1547887537-6158d64c35b3?auto=format&fit=crop&w=400&q=80', categoriaVal: 'Decants' }
+            ].map((cat, idx) => (
+              <div className="col-4 col-md-2 text-center" key={idx}>
+                <div 
+                  onClick={() => {
+                    setCategoriaFiltro(cat.categoriaVal);
+                    document.getElementById('catalogo').scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  style={{ cursor: 'pointer', transition: 'transform 0.2s' }}
+                >
+                  <div className="rounded-circle overflow-hidden shadow-sm mx-auto mb-2 border border-2 border-light" style={{ width: '110px', height: '110px' }}>
+                    <img src={cat.img} alt={cat.nombre} className="w-100 h-100 object-fit-cover" />
+                  </div>
+                  <span className="fw-bold text-dark small" style={{ fontSize: '0.8rem' }}>{cat.nombre}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* CARRITO DESPLEGABLE */}
       {mostrarCarrito && (
         <div className="position-fixed top-0 end-0 m-4 bg-white rounded-4 shadow-lg p-4 border" style={{ zIndex: 1060, width: '360px', maxWidth: '90vw' }}>
@@ -471,104 +515,173 @@ export default function Tienda() {
         </div>
       )}
 
-      {/* CATÁLOGO Y FILTROS */}
-      <section id="catalogo" className="w-100 py-5 px-4 px-lg-5">
-        <div className="text-center mb-4">
-          <span className="text-uppercase fw-semibold d-block mb-1" style={{ color: '#B25D38', letterSpacing: '1.5px', fontSize: '0.7rem' }}>
-            COLECCIÓN EXCLUSIVA
-          </span>
-          <h2 className="fw-bold mb-3 text-dark" style={{ fontSize: '2rem' }}>Catálogo Su Mejor Esencia</h2>
-
-          {/* BUSCADOR */}
-          <div className="mx-auto mb-4" style={{ maxWidth: '400px' }}>
-            <input 
-              type="text" 
-              className="form-control rounded-pill px-4 py-2 border-0 bg-white shadow-sm text-center small"
-              placeholder="Buscar por perfume, marca o notas olfativas..."
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
-          </div>
-
-          {/* BARRA DE FILTROS POR CATEGORÍA / FAMILIA OLFATIVA */}
-          <div className="d-flex justify-content-center flex-wrap gap-2 mb-4">
-            {['Todos', 'Árabes', 'Amaderados', 'Frescos', 'Dulces', 'Nicho'].map(cat => (
-              <button
-                key={cat}
-                className={`btn btn-sm rounded-pill px-3 py-1 fw-semibold transition-all ${
-                  categoriaFiltro === cat 
-                    ? 'btn-dark text-white shadow-sm' 
-                    : 'btn-outline-secondary bg-white text-dark border-0 shadow-sm'
-                }`}
-                style={{ fontSize: '0.75rem' }}
-                onClick={() => setCategoriaFiltro(cat)}
-              >
-                {cat}
+      {/* SECCIÓN CATÁLOGO CON BARRA LATERAL ESTILO TIENDA PROFESIONAL */}
+      <section id="catalogo" className="w-100 py-5 px-3 px-lg-5">
+        <div className="container-fluid">
+          
+          {/* TÍTULO DINÁMICO DE CATEGORÍA */}
+          <div className="mb-4 d-flex justify-content-between align-items-center">
+            <div>
+              <h2 className="fw-bold text-dark text-capitalize" style={{ fontSize: '1.8rem' }}>
+                {categoriaFiltro === 'Todos' ? 'Todas las Fragancias' : `Perfumes de ${categoriaFiltro}`}
+              </h2>
+              <p className="text-muted small">Mostrando resultados para tu selección</p>
+            </div>
+            {categoriaFiltro !== 'Todos' && (
+              <button className="btn btn-outline-dark btn-sm rounded-pill" onClick={() => setCategoriaFiltro('Todos')}>
+                Ver Todos
               </button>
-            ))}
+            )}
           </div>
-        </div>
 
-        {cargando ? (
-          <div className="text-center py-5">
-            <div className="spinner-border text-dark" role="status"></div>
-            <p className="text-muted small mt-2">Cargando fragancias...</p>
-          </div>
-        ) : (
-          <div className="row g-4 w-100 m-0 justify-content-center">
-            {productosFiltrados.map(prod => {
-              const estaAgotado = prod.stock <= 0;
-              const ultimasUnidades = prod.stock > 0 && prod.stock <= 3;
-
-              return (
-                <div className="col-6 col-md-4 col-lg-3" key={prod.id}>
-                  <div className="h-100 bg-white p-3 rounded-3 border-0 text-center d-flex flex-column justify-content-between shadow-sm position-relative">
-                    
-                    {/* INSIGNIAS DE STOCK AUTOMÁTICO */}
-                    {estaAgotado ? (
-                      <span className="position-absolute top-0 start-0 m-3 badge bg-danger text-uppercase" style={{ fontSize: '0.6rem' }}>
-                        Agotado
-                      </span>
-                    ) : ultimasUnidades ? (
-                      <span className="position-absolute top-0 start-0 m-3 badge bg-warning text-dark text-uppercase" style={{ fontSize: '0.6rem' }}>
-                        ¡Últimas {prod.stock} unids!
-                      </span>
-                    ) : null}
-
-                    <div>
-                      <img src={prod.imagen} alt={prod.nombre} className="img-fluid rounded mb-3" style={{ height: '160px', objectFit: 'contain', width: '100%', opacity: estaAgotado ? 0.5 : 1 }} />
-                      <small className="text-muted d-block text-uppercase" style={{ fontSize: '0.65rem' }}>{prod.marca}</small>
-                      <h6 className="fw-bold text-dark mt-1 mb-2" style={{ fontSize: '0.85rem' }}>{prod.nombre}</h6>
-                    </div>
-
-                    <div>
-                      <p className="fw-bold text-dark mb-2" style={{ fontSize: '0.9rem' }}>₡{prod.precio.toLocaleString()}</p>
-                      
-                      <button 
-                        className={`btn btn-sm w-100 rounded-pill fw-semibold py-1 mb-2 ${estaAgotado ? 'btn-secondary disabled' : 'btn-dark'}`}
-                        style={{ fontSize: '0.75rem' }}
-                        disabled={estaAgotado}
-                        onClick={() => agregarAlCarrito(prod)}
-                      >
-                        {estaAgotado ? 'Sin Stock' : 'Añadir Botella (100ml)'}
-                      </button>
-
-                      {prod.decant_precio && (
-                        <button 
-                          className="btn btn-outline-secondary btn-sm w-100 rounded-pill fw-semibold py-1"
-                          style={{ fontSize: '0.7rem' }}
-                          onClick={() => agregarAlCarrito(prod, true)}
-                        >
-                          + Decant 2ml (₡{prod.decant_precio.toLocaleString()})
-                        </button>
-                      )}
-                    </div>
+          <div className="row g-4">
+            
+            {/* ---------------- BARRA LATERAL IZQUIERDA DE FILTROS (SIN CATEGORÍAS) ---------------- */}
+            <div className="col-lg-3">
+              <div className="bg-white p-4 rounded-3 shadow-sm border-0 sticky-top" style={{ top: '90px' }}>
+                
+                {/* FILTRO DE PRECIO MÁXIMO */}
+                <h6 className="fw-bold mb-2 text-uppercase small" style={{ letterSpacing: '1px' }}>Filtrar por Precio</h6>
+                <div className="mb-4">
+                  <input 
+                    type="range" 
+                    className="form-range" 
+                    min="5000" 
+                    max="100000" 
+                    step="5000"
+                    value={precioMaximo}
+                    onChange={(e) => setPrecioMaximo(Number(e.target.value))}
+                  />
+                  <div className="d-flex justify-content-between small text-muted">
+                    <span>₡5,000</span>
+                    <span className="fw-bold text-dark">Máx: ₡{precioMaximo.toLocaleString()}</span>
                   </div>
                 </div>
-              );
-            })}
+
+                <hr className="text-muted my-3" />
+
+                {/* FILTRO DE MARCAS */}
+                <h6 className="fw-bold mb-2 text-uppercase small" style={{ letterSpacing: '1px' }}>Marcas</h6>
+                <div className="mb-4" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                  {marcasDisponibles.map(m => (
+                    <div className="form-check mb-1" key={m}>
+                      <input 
+                        className="form-check-input" 
+                        type="radio" 
+                        name="filtroMarca" 
+                        id={`marca-${m}`} 
+                        checked={marcaSeleccionada === m}
+                        onChange={() => setMarcaSeleccionada(m)}
+                      />
+                      <label className="form-check-label small text-secondary" htmlFor={`marca-${m}`}>
+                        {m}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+
+                <hr className="text-muted my-3" />
+
+                {/* FILTRO POR OCASIÓN */}
+                <h6 className="fw-bold mb-2 text-uppercase small" style={{ letterSpacing: '1px' }}>Filtrar por Ocasión</h6>
+                <div className="d-flex flex-column gap-1">
+                  {['Todas', 'Día', 'Noche', 'Oficina', 'Cita'].map(ocasion => (
+                    <button
+                      key={ocasion}
+                      className={`btn btn-sm text-start py-1 px-2 rounded-2 ${ocasionSeleccionada === ocasion ? 'fw-bold text-dark bg-light' : 'text-muted'}`}
+                      onClick={() => setOcasionSeleccionada(ocasion)}
+                      style={{ fontSize: '0.8rem' }}
+                    >
+                      • {ocasion}
+                    </button>
+                  ))}
+                </div>
+
+              </div>
+            </div>
+
+            {/* ---------------- CUADRÍCULA DE PRODUCTOS (DERECHA) ---------------- */}
+            <div className="col-lg-9">
+              
+              {/* BUSCADOR SUPERIOR */}
+              <div className="mb-4">
+                <input 
+                  type="text" 
+                  className="form-control rounded-pill px-4 py-2 border-0 bg-white shadow-sm small"
+                  placeholder="Buscar en esta categoría por nombre o notas olfativas..."
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                />
+              </div>
+
+              {cargando ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-dark" role="status"></div>
+                  <p className="text-muted small mt-2">Cargando fragancias...</p>
+                </div>
+              ) : productosFiltrados.length === 0 ? (
+                <div className="text-center bg-white p-5 rounded-3 shadow-sm">
+                  <p className="text-muted mb-0">No se encontraron fragancias con los filtros seleccionados.</p>
+                </div>
+              ) : (
+                <div className="row g-4">
+                  {productosFiltrados.map(prod => {
+                    const estaAgotado = prod.stock <= 0;
+                    const ultimasUnidades = prod.stock > 0 && prod.stock <= 3;
+
+                    return (
+                      <div className="col-6 col-md-4" key={prod.id}>
+                        <div className="h-100 bg-white p-3 rounded-3 border-0 text-center d-flex flex-column justify-content-between shadow-sm position-relative">
+                          
+                          {estaAgotado ? (
+                            <span className="position-absolute top-0 start-0 m-3 badge bg-danger text-uppercase" style={{ fontSize: '0.6rem' }}>
+                              Agotado
+                            </span>
+                          ) : ultimasUnidades ? (
+                            <span className="position-absolute top-0 start-0 m-3 badge bg-warning text-dark text-uppercase" style={{ fontSize: '0.6rem' }}>
+                              ¡Últimas {prod.stock} unids!
+                            </span>
+                          ) : null}
+
+                          <div>
+                            <img src={prod.imagen} alt={prod.nombre} className="img-fluid rounded mb-3" style={{ height: '160px', objectFit: 'contain', width: '100%', opacity: estaAgotado ? 0.5 : 1 }} />
+                            <small className="text-muted d-block text-uppercase" style={{ fontSize: '0.65rem' }}>{prod.marca}</small>
+                            <h6 className="fw-bold text-dark mt-1 mb-2" style={{ fontSize: '0.85rem' }}>{prod.nombre}</h6>
+                          </div>
+
+                          <div>
+                            <p className="fw-bold text-dark mb-2" style={{ fontSize: '0.9rem' }}>₡{prod.precio.toLocaleString()}</p>
+                            
+                            <button 
+                              className={`btn btn-sm w-100 rounded-pill fw-semibold py-1 mb-2 ${estaAgotado ? 'btn-secondary disabled' : 'btn-dark'}`}
+                              style={{ fontSize: '0.75rem' }}
+                              disabled={estaAgotado}
+                              onClick={() => agregarAlCarrito(prod)}
+                            >
+                              {estaAgotado ? 'Sin Stock' : 'Añadir Botella (100ml)'}
+                            </button>
+
+                            {prod.decant_precio && (
+                              <button 
+                                className="btn btn-outline-secondary btn-sm w-100 rounded-pill fw-semibold py-1"
+                                style={{ fontSize: '0.7rem' }}
+                                onClick={() => agregarAlCarrito(prod, true)}
+                              >
+                                + Decant 2ml (₡{prod.decant_precio.toLocaleString()})
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+            </div>
+
           </div>
-        )}
+        </div>
       </section>
 
       {/* FOOTER */}
